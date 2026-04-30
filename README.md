@@ -36,7 +36,7 @@ ptbxl_project/
 ### 1. Clone & install
 
 ```bash
-git clone https://github.com/<your-handle>/ptbxl-xresnet1d.git
+git clone https://github.com/InakiBengoetxea/ecg_classification_ptb-xl.git
 cd ptbxl-xresnet1d
 pip install -r requirements.txt
 ```
