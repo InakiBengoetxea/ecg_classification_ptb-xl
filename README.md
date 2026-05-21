@@ -25,6 +25,7 @@ ptbxl_project/
 │   └── xai_implementation.ipynb   # XAI generation and dashboard visualization
 ├── outputs/                       # Checkpoints, loss curves, figures (git-ignored)
 ├── data/                          # Place raw PTB-XL data here (git-ignored)
+├── .gitignore                   # Ignores large datasets and outputs
 ├── requirements.txt
 └── README.md
 ```
@@ -43,16 +44,21 @@ pip install -r requirements.txt
 
 ### 2. Download the dataset
 
-Download PTB-XL from PhysioNet and extract it into `data/`:
+This project is designed to be portable. The dataset is not included in the repository. To run the code:
 
-```
-data/
+    1. Download the PTB-XL dataset from PhysioNet.
+
+    2. Place the extracted folder in your project root or a preferred local directory.
+
+    3. Important: Open the first cell of the notebooks and update the PATH variable to point to your local dataset location.
+
+Recommended local structure:
+
+ptbxl_project/
 └── ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3/
     ├── ptbxl_database.csv
-    ├── scp_statements.csv
     └── records100/
 ```
-
 ### 3. Run the notebook
 
 ```bash
@@ -149,5 +155,4 @@ Sample 37 (False Negative): The model predicted HYP as the top class, while the 
 - Strodthoff et al. (2020) — *PTB-XL, a large publicly available electrocardiography dataset*
 - He et al. (2019) — *Bag of Tricks for Image Classification with CNNs* (XResNet)
 - fastai XResNet implementation
-- Zennit Framework for attribution-based XAI.
 - SHAP (Lundberg et al.) for model-agnostic feature importance.
