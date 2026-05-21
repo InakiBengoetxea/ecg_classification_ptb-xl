@@ -171,14 +171,34 @@ def get_predictions(
     model.eval()
     all_preds, all_targets = [], []
 
+
     with torch.no_grad():
-        for X, y in loader:
-            X = X.to(device)
-            preds = torch.sigmoid(model(X)).cpu().numpy()
+        for batch in loader:
+            # Check if the batch has 3 items (Fusion: ECG, Meta, Y) 
+            # or 2 items (ECG-only: X, Y)
+            if len(batch) == 3:
+                x_ecg, x_meta, y = batch
+                x_ecg, x_meta = x_ecg.to(device), x_meta.to(device)
+                outputs = model(x_ecg, x_meta)
+            else:
+                x_ecg, y = batch
+                x_ecg = x_ecg.to(device)
+                outputs = model(x_ecg)
+
+            preds = torch.sigmoid(outputs).cpu().numpy()
             all_preds.append(preds)
             all_targets.append(y.numpy())
 
-    return np.vstack(all_preds), np.vstack(all_targets)
+    return np.concatenate(all_preds), np.concatenate(all_targets)
+
+  #  with torch.no_grad():
+   #     for X, y in loader:
+   #         X = X.to(device)
+    #        preds = torch.sigmoid(model(X)).cpu().numpy()
+    #        all_preds.append(preds)
+    #        all_targets.append(y.numpy())
+
+   # return np.vstack(all_preds), np.vstack(all_targets)
 
 
 # ---------------------------------------------------------------------------

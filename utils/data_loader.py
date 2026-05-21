@@ -13,6 +13,7 @@ import wfdb
 from sklearn.preprocessing import MultiLabelBinarizer
 import torch
 from torch.utils.data import Dataset, DataLoader
+from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -30,10 +31,15 @@ def load_raw_data(df: pd.DataFrame, sampling_rate: int, path: str) -> np.ndarray
     Returns:
         numpy array of shape (N, seq_len, 12).
     """
+    # 1. Force path to be a Path object so the '/' operator always works
+    base_path = Path(path)
+
+    # 2. Use the '/' operator to join, then convert to str for wfdb compatibility
     if sampling_rate == 100:
-        data = [wfdb.rdsamp(path + f) for f in df.filename_lr]
+        data = [wfdb.rdsamp(str(base_path / f)) for f in df.filename_lr]
     else:
-        data = [wfdb.rdsamp(path + f) for f in df.filename_hr]
+        data = [wfdb.rdsamp(str(base_path / f)) for f in df.filename_hr]
+        
     return np.array([signal for signal, _ in data])
 
 
@@ -163,24 +169,34 @@ def build_dataloaders(
 # ---------------------------------------------------------------------------
 # Metadata preprocessing
 # ---------------------------------------------------------------------------
+
 def load_metadata(Y):
-    meta_cols = ["age", "sex", "height", "weight", "nurse", "site", "device", "recording_date"]
+    meta_cols = ["age", "sex", "height", "weight", "pacemaker", "extra_beats", "heart_axis"]
     meta = Y[meta_cols].copy()
 
-    meta["sex"] = meta["sex"].map({"male": 0, "female": 1})
-    meta["device"] = meta["device"].astype("category").cat.codes
-    meta["site"] = meta["site"].astype("category").cat.codes
-    meta["nurse"] = meta["nurse"].fillna(-1).astype(int)
+    # 1. Sex: Handle common string/numeric variants
+    meta["sex"] = meta["sex"].map({"male": 0, "female": 1, 0: 0, 1: 1, "0": 0, "1": 1})
 
-    meta["recording_date"] = pd.to_datetime(meta["recording_date"])
-    meta["year"] = meta["recording_date"].dt.year
-    meta["month"] = meta["recording_date"].dt.month
-    meta["weekday"] = meta["recording_date"].dt.dayofweek
-    meta = meta.drop(columns=["recording_date"])
+    # 2. Presence Features: 
+    # Logic: If the string contains the relevant keyword, it is 1, else 0.
+    def check_presence(val):
+        # Convert to string to safely handle different types
+        val_str = str(val).lower()
+        # Look for indicators of presence
+        if "pacemaker" in val_str or "ja" in val_str or "yes" in val_str:
+            return 1
+        return 0
 
-    meta = meta.fillna(0)
+    meta["pacemaker"] = meta["pacemaker"].apply(check_presence)
+    meta["extra_beats"] = meta["extra_beats"].apply(check_presence)
+
+    # 3. Heart Axis: Force numeric conversion, setting non-numeric to 0
+    meta["heart_axis"] = pd.to_numeric(meta["heart_axis"], errors='coerce').fillna(0).astype(int)
+
+    # 4. Final cleaning: Handle any other missing numerical values
+    meta = meta.fillna(0).astype(int)
+    
     return meta
-
 
 
 # ---------------------------------------------------------------------------
