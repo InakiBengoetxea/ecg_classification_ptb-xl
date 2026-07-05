@@ -4,16 +4,13 @@ fusion.py
 FusionModel combining xresnet1d101 (ECG branch) and MetaMLP (metadata branch).
 
 Design:
-  - ECG branch  : xresnet1d101 WITH its full Linear head intact (256 → num_classes).
-                  Features are extracted BEFORE the final Linear so the head
-                  remains intact for LRP backpropagation.
-  - Meta branch : MetaMLP  (in_features → 64 → 32)
-  - Fusion      : concat(ecg_features[256], meta_features[32]) → 288-dim
-                  → classifier (288 → 64 → num_classes)
+  - ECG branch  : xresnet1d101 WITH its full Linear head intact.
+                  Features are extracted (logits) so the head remains intact 
+                  for LRP backpropagation.
+  - Meta branch : MetaMLP dynamically sized based on metadata features.
+  - Fusion      : concat(ecg_logits [num_classes], meta_features [dynamic])
+                  -> classifier (fusion_dim -> 64 -> num_classes)
 """
-    
-import torch
-import torch.nn as nn
 
 import torch
 import torch.nn as nn
@@ -25,8 +22,18 @@ class FusionModel(nn.Module):
         self.meta        = meta_model
         self.num_classes = num_classes
 
-        meta_feat_dim = 32                           # MetaMLP out_features
-        fusion_dim    = num_classes + meta_feat_dim  # 5 + 32 = 37
+        # Safely find the output shape of the meta_model by scanning for Linear layers
+        linear_layers = [m for m in self.meta.modules() if isinstance(m, nn.Linear)]
+        if linear_layers:
+            meta_feat_dim = linear_layers[-1].out_features
+        else:
+            # Fallback guard: track shape by performing a mock forward pass through the meta block
+            with torch.no_grad():
+                mock_input = torch.zeros(1, list(self.meta.modules())[1].in_features if hasattr(list(self.meta.modules())[1], 'in_features') else 1)
+                meta_feat_dim = self.meta(mock_input).shape[-1]
+        
+        # Calculate the combined dimension size (ECG Logits + Meta Features)
+        fusion_dim = num_classes + meta_feat_dim
 
         self.classifier = nn.Sequential(
             nn.Linear(fusion_dim, 64),
@@ -37,15 +44,15 @@ class FusionModel(nn.Module):
 
     def forward(self, ecg: torch.Tensor, meta: torch.Tensor) -> torch.Tensor:
         # Feature extraction from both branches
-        ecg_feat  = self.ecg(ecg)    # Output: (Batch, 5)
-        meta_feat = self.meta(meta)  # Output: (Batch, 32)
+        ecg_feat  = self.ecg(ecg)    # Output shape: (Batch, num_classes)
+        meta_feat = self.meta(meta)  # Output shape: (Batch, meta_feat_dim)
 
-        # Tensor flattening to ensure compatible dimensions for concatenation
+        # Secure flattening across the batch dimension using flatten instead of view
         if ecg_feat.dim() > 2:
-            ecg_feat = ecg_feat.view(ecg_feat.size(0), -1)
+            ecg_feat = ecg_feat.flatten(1)
         if meta_feat.dim() > 2:
-            meta_feat = meta_feat.view(meta_feat.size(0), -1)
+            meta_feat = meta_feat.flatten(1)
 
-        # Fusion by concatenation (Total features: 37)
+        # Fusion by concatenation
         fusion = torch.cat([ecg_feat, meta_feat], dim=1)
         return self.classifier(fusion)

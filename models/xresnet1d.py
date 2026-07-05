@@ -129,7 +129,11 @@ class ConvLayer(nn.Sequential):
         layers = [conv]
         act_bn = []
         if act_cls is not None:
-            act_bn.append(act_cls())
+            # Enforce non-inplace activations inside layers to preserve LRP backpropagation tracks
+            if "inplace" in inspect.signature(act_cls).parameters:
+                act_bn.append(act_cls(inplace=False))
+            else:
+                act_bn.append(act_cls())
         if bn:
             act_bn.append(BatchNorm(nf, norm_type=norm_type, ndim=ndim))
         if bn_1st:
@@ -202,14 +206,18 @@ class ResBlock(nn.Module):
             ]
 
         self.convs = nn.Sequential(*layers)
-        self.idpath = nn.Sequential()
-
-        if ni != nf:
-            self.idpath = nn.Sequential(ConvLayer(ni, nf, 1, act_cls=None, ndim=ndim, **kwargs))
+        
+        idpath_layers = []
         if stride != 1:
-            self.idpath = nn.Sequential(pool(2, ndim=ndim, ceil_mode=True))
+            idpath_layers.append(pool(2, ndim=ndim, ceil_mode=True))
+        if ni != nf:
+            idpath_layers.append(ConvLayer(ni, nf, 1, act_cls=None, ndim=ndim, **kwargs))
+            
+        self.idpath = nn.Sequential(*idpath_layers)
 
-        self.act = nn.ReLU(inplace=True)
+        
+        # Explicitly disabled inplace operations to ensure that explainability layers don't clear memory views
+        self.act = nn.ReLU(inplace=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.act(self.convs(x) + self.idpath(x))
@@ -270,7 +278,8 @@ class XResNet1d(nn.Sequential):
             for i in range(3)
         ]
 
-        block_szs = [int(o * widen) for o in [64, 64, 64, 64] + [32] * (len(layers) - 4)]
+        # Standard progressive ResNet channel progression (64 -> 128 -> 256 -> 512)
+        block_szs = [int(o * widen) for o in [64, 128, 256, 512] + [512] * (len(layers) - 4)]
         block_szs = [64 // expansion] + block_szs
 
         blocks = [
