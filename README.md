@@ -1,6 +1,6 @@
 # XResNet1d-101 on PTB-XL
 
-Multi-label ECG classification using a 1-D XResNet-101 on the [PTB-XL dataset](https://physionet.org/content/ptb-xl/1.0.3/).
+Multi-label ECG classification using a 1-D XResNet-101 and multi-modal clinical metadata fusion on the [PTB-XL dataset](https://physionet.org/content/ptb-xl/1.0.3/).
 
 ---
 
@@ -17,15 +17,23 @@ ptbxl_project/
 │   ├── __init__.py
 │   ├── data_loader.py             # PTB-XL loading, Dataset, DataLoader helpers
 │   ├── trainer.py                 # Training loop, early stopping, inference
-│   └── metrics.py                 # AUC, confusion matrices, plots
+│   ├── metrics.py                 # Performance metrics (AUC, confusion matrices, loss curves)
+│   └── robustness.py              # Synthetic noise injection pipelines (EMG, PLI, BW)
 ├── xai_pipeline.py                # XAI Framework (LRP, DTD, Grad-CAM, SHAP, PFI)
 ├── notebooks/
-│   └── xresnet1d101_ptbxl.ipynb   # Baseline ECG training
-│   ├── fusion_training.ipynb      # Multimodal model training
-│   └── xai_implementation.ipynb   # XAI generation and dashboard visualization
+│   ├── fusion_training.ipynb      # End-to-end multi-modal model training across task horizons
+│   ├── noisy_training_robustness.ipynb  # Implements a targeted data augmentation pipeline to evaluate model robustness under controlled training corruption
+│   ├── robustness_analysis.ipynb  # Performance degradation evaluation under noise stress-tests
+│   ├── xai_implementation.ipynb   # Local and global explainability generation pipeline
+│   └── xresnet1d101_ptbxl.ipynb   # Baseline single-modality ECG network training
 ├── outputs/                       # Checkpoints, loss curves, figures (git-ignored)
+│   ├── confusion_matrices/
+│   ├── scp-statement/             # Outputs and evaluation metrics for SCP task
+│   ├── subclass/                  # Outputs and evaluation metrics for Subclass task
+│   └── superclass/                # Outputs and evaluation metrics for Superclass task
+├── ptb-xl-a-large-publicly-available-electrocardiography-dataset-1.0.3/  # Raw dataset root
 ├── data/                          # Place raw PTB-XL data here (git-ignored)
-├── .gitignore                   # Ignores large datasets and outputs
+├── .gitignore                     # Ignores large datasets and outputs
 ├── requirements.txt
 └── README.md
 ```
@@ -62,12 +70,19 @@ ptbxl_project/
 ### 3. Run the notebook
 
 ```bash
+
+# 1. Train or evaluate the xresnet1d101 architecture
 jupyter notebook notebooks/xresnet1d101_ptbxl.ipynb
+
+# 2. Train or evaluate the fusion architecture
 jupyter notebook notebooks/fusion_training.ipynb
+
+# 3. Stress-test the models under simulated clinical artifacts
+jupyter notebook notebooks/robustness_analysis.ipynb
+
+# 4. Generate post-hoc local/global explanations
 jupyter notebook notebooks/xai_implementation.ipynb
 ```
-
-Or open it in **Google Colab** — the notebook contains a commented-out cell that mounts Google Drive and unzips the dataset automatically.
 
 ---
 
@@ -105,6 +120,11 @@ Or open it in **Google Colab** — the notebook contains a commented-out cell th
 | `get_predictions(model, loader)` | Collect sigmoid preds & targets |
 | `plot_losses(train_losses, val_losses)` | Loss curve visualisation |
 
+### `utils/robustness.py`
+| Symbol | Description |
+|--------|-------------|
+| `FusionStressTestWrapper` | Stateful tracking wrapper designed to feed multi-modal evaluation inputs into single-input stress evaluation functions. |
+
 ### `utils/metrics.py`
 | Symbol | Description |
 |--------|-------------|
@@ -128,26 +148,21 @@ Or open it in **Google Colab** — the notebook contains a commented-out cell th
 ## Results
 
 
-| Metric               | ECG Model | Fusion Model |
-|----------------------|-----------|--------------|
-| Accuracy             |	0.6260 |	0.6274    |
-| F1 Score             |	0.7251 |	0.7310    |
-| Precision (PPV)      |	0.7918 |	0.7882    |
-| Sensitivity (Recall) |	0.6862 |	0.6931    |
-| Specificity          |	0.9265 |	0.9295    |
-| MCC                  |	0.6938 |	0.6967    |
-| AUC                  |	0.9224 |	0.9234    |
+================================================================================
+Task Matrix Category | Test Accuracy   | Macro F1-Score  | Macro ROC-AUC  
+---------------------------------------------------------------------------
+superclass           |          0.6283 |          0.7285 |          0.9212
+subclass             |          0.5965 |          0.5704 |          0.9464
+scp-statement        |          0.6051 |          0.5749 |          0.9347
+===========================================================================
 
-Explainability Observations (XAI):
+Explainability & Robustness Summary
 
-The failure cases provided illustrate instances where the model's prediction confidence did not align with the actual labels:
+ECG Attributions: LRP and DTD maps successfully highlight target diagnostic features corresponding directly to the P-wave, QRS complex, and T-wave boundaries.
 
-Sample 33 (False Negative): The model predicted CD with high confidence, while the actual labels were NORM and CD.
+Metadata Impact: Resolving the zero-variance bottleneck reveals clear global demographic distributions across the superclass tasks.
 
-Sample 32 (False Positive): The model predicted CD with high confidence, but the actual label was STTC.
-
-Sample 37 (False Negative): The model predicted HYP as the top class, while the actual label was CD.
-
+Noise Tolerance: Stress matrix testing reveals high resilience against Power Line Interference and Baseline Wander, while highlighting specific vulnerability vectors under severe 0 dB Muscle Artifact (EMG) noise contamination.
 ---
 
 ## References
